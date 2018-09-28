@@ -1,0 +1,12 @@
+---
+name: BanPlus
+version: "1.0"
+api:
+- 3.0.7
+- 4.0.0
+author: nlog
+main: nlog\BanPlus\BanPlus
+commands:
+  banall:
+    description: 밴
+...
