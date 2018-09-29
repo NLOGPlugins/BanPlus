@@ -83,8 +83,7 @@ class BanPlus extends PluginBase implements Listener {
     }
 
     public function onDataPacketRecieve(DataPacketReceiveEvent $ev) {
-        if ($ev->getPacket() instanceof LoginPacket) {
-echo TextFormat::clean($ev->getPacket()->username);
+        if ($ev->getPacket() instanceof LoginPacket) 
             $this->packets[TextFormat::clean($ev->getPacket()->username)] = clone $ev->getPacket();
         }
     }
