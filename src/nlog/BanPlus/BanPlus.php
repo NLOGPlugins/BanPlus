@@ -2,15 +2,13 @@
 
 namespace nlog\BanPlus;
 
+use nlog\BanPlus\tasks\VPNCheck;
+use pocketmine\event\Listener;
 use pocketmine\event\player\PlayerLoginEvent;
 use pocketmine\event\server\DataPacketReceiveEvent;
-use pocketmine\plugin\PluginBase;
-use pocketmine\event\Listener;
-use pocketmine\utils\Config;
 use pocketmine\network\mcpe\protocol\LoginPacket;
 use pocketmine\Player;
-use pocketmine\command\CommandSender;
-use pocketmine\command\Command;
+use pocketmine\plugin\PluginBase;
 use pocketmine\utils\TextFormat;
 
 class BanPlus extends PluginBase implements Listener {
@@ -51,8 +49,7 @@ class BanPlus extends PluginBase implements Listener {
     public $xuid;
 
     /** @var array */
-    public $identify_key;
-
+    public $deviceId;
 
     /** @var LoginPacket[] */
     public $packets;
@@ -66,7 +63,7 @@ class BanPlus extends PluginBase implements Listener {
         $this->ip = $data['ip'] ?? [];
         $this->uuid = $data['uuid'] ?? [];
         $this->xuid = $data['xuid'] ?? [];
-        $this->identify_key = $data['identify_key'] ?? [];
+        $this->deviceId = $data['deviceId'] ?? [];
 
         $this->getServer()->getPluginManager()->registerEvents($this, $this);
         $this->getLogger()->notice("BanPlus has been enabled.");
@@ -78,17 +75,18 @@ class BanPlus extends PluginBase implements Listener {
                 'ip' => $this->ip,
                 'uuid' => $this->uuid,
                 'xuid' => $this->xuid,
-                'identify_key' => $this->identify_key
+                'deviceId' => $this->deviceId
         ]), JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT));
     }
 
     public function onDataPacketRecieve(DataPacketReceiveEvent $ev) {
-        if ($ev->getPacket() instanceof LoginPacket) {
-            $this->packets[TextFormat::clean($ev->getPacket()->username)] = clone $ev->getPacket();
+        /** @var $pk LoginPacket */
+        if (($pk = $ev->getPacket()) instanceof LoginPacket) {
+            $this->packets[TextFormat::clean($pk->playerInfo->getUsername())] = clone $pk;
         }
     }
 
-    public function onPreLogin(PlayerLoginEvent $ev) {
+    public function onLogin(PlayerLoginEvent $ev) {
         $pk = $this->packets[$ev->getPlayer()->getName()] ?? null;
         if ($this->isSubAccount($ev->getPlayer(), $pk, $name)) {
             $this->setAccountInformation($ev->getPlayer(), $pk, $this->getSubAccountName($ev->getPlayer(), $pk));
@@ -96,6 +94,8 @@ class BanPlus extends PluginBase implements Listener {
             $ev->setKickMessage('§c서버에서 부계정을 사용할 수 없습니다.\n§b본계정 §a: ' . $name);
         } else {
             $this->setAccountInformation($ev->getPlayer(), $pk, $this->getSubAccountName($ev->getPlayer(), $pk));
+
+            $this->getServer()->getAsyncPool()->submitTask(new VPNCheck($ev->getPlayer()->getName(), $ev->getPlayer()->getAddress()));
         }
     }
 
@@ -105,7 +105,7 @@ class BanPlus extends PluginBase implements Listener {
         $this->uuid[$player->getUniqueId()->toString()] = $orginalAccount ?? $player->getName();
         $this->xuid[$player->getXuid()] = $orginalAccount ?? $player->getName();
         if ($pk instanceof LoginPacket) {
-            $this->identify_key[$pk->identityPublicKey] = $orginalAccount ?? $player->getName();
+            $this->deviceId[$pk->clientData['DeviceId']] = $orginalAccount ?? $player->getName();
         }
         return true;
     }
@@ -145,9 +145,9 @@ class BanPlus extends PluginBase implements Listener {
         }
 
 
-        if ($pk instanceof LoginPacket && strcasecmp($player->getName(), TextFormat::clean($pk->username)) == 0 && isset($this->identify_key[strtolower($player->getName())])) {
-            if (strcasecmp($this->identify_key[$pk->identityPublicKey], $player->getName()) != 0) {
-                $result[] = $this->identify_key[$pk->identityPublicKey];
+        if ($pk instanceof LoginPacket && strcasecmp($player->getName(), TextFormat::clean($pk->playerInfo->getUsername())) == 0 && isset($this->deviceId[strtolower($player->getName())])) {
+            if (strcasecmp($this->deviceId[$pk->clientData['DeviceId']], $player->getName()) != 0) {
+                $result[] = $this->deviceId[$pk->clientData['DeviceId']];
             }
         }
 
@@ -160,28 +160,8 @@ class BanPlus extends PluginBase implements Listener {
      * @return bool
      */
     public function isSubAccount(Player $player, ?LoginPacket $pk = null, ?string &$accountName = null): bool {
-        return is_null($accountName = $this->getSubAccountName($player, $pk)) ? false : true;
+        return ($accountName = $this->getSubAccountName($player, $pk)) !== null;
     }
-
-    /*
-        public function onCommand(CommandSender $sender, Command $command, string $label, array $args): bool {
-            if (!isset($args[0])) {
-                $sender->sendMessage(self::$prefix . "/banall add <이름>");
-                $sender->sendMessage(self::$prefix . "/banall remove <이름>");
-                $sender->sendMessage(self::$prefix . "/banall list");
-                $sender->sendMessage(self::$prefix . "/banall removeall");
-                return true;
-            }
-    
-            if ($args[0] === "add") {
-                if (!isset($args[1])) {
-                    $sender->sendMessage(self::$prefix . "/banall add <이름>");
-                    return true;
-                }
-    
-            }
-        }
-    */
 }//클래스 괄호
 
 ?>
